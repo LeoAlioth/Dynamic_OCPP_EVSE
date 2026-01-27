@@ -1,0 +1,57 @@
+name: Auto Pre-Release (dev / pre-release)
+
+on:
+  push:
+    branches:
+      - dev
+      - pre-release
+
+jobs:
+  release:
+    if: github.ref_name == 'dev' || github.ref_name == 'pre-release'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine tag name
+        run: |
+          BRANCH="${GITHUB_REF##*/}"
+
+          if [ "$BRANCH" = "dev" ]; then
+            TAG_NAME="dev-$(git rev-parse --short HEAD)"
+          elif [ "$BRANCH" = "pre-release" ]; then
+            TAG_NAME=$(jq -r '.version' custom_components/dynamic_ocpp_evse/manifest.json)
+          else
+            echo "Unsupported branch"
+            exit 1
+          fi
+
+          echo "TAG_NAME=$TAG_NAME" >> $GITHUB_ENV
+          echo "BRANCH=$BRANCH" >> $GITHUB_ENV
+
+      # Note: Removed automatic deletion of previous prereleases
+      # Old prereleases are kept to maintain release history
+
+      - name: Create ZIP archive
+        run: |
+          # Create zip with full path for HACS (content_in_root: false)
+          # HACS expects: /manifest.json
+          cd custom_components/dynamic_ocpp_evse         
+          zip -r dynamic-ocpp-evse.zip .
+
+      - name: Create GitHub prerelease
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG_NAME }}
+          name: Dynamic OCPP EVSE ${{ env.TAG_NAME }}
+          prerelease: true
+          draft: false
+          files: custom_components/dynamic_ocpp_evse/dynamic-ocpp-evse.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
